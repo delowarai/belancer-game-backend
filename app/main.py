@@ -6,6 +6,7 @@ import secrets
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, Column, String, Text, Integer, select, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Session
@@ -66,8 +67,13 @@ async def same_origin(request: Request, call_next):
     if request.method in ('POST','PUT','DELETE','PATCH'):
         origin = request.headers.get('origin')
         expected = os.getenv('PUBLIC_ORIGIN', 'http://localhost:5173')
-        if origin and origin != expected: return Response('Origin rejected', status_code=403)
-        if request.headers.get('x-requested-with') != 'Belancer': return Response('CSRF header required', status_code=403)
+        allowed = {expected}
+        local_origins = {'http://localhost:5173', 'http://127.0.0.1:5173'}
+        if expected in local_origins: allowed.update(local_origins)
+        if origin and origin not in allowed:
+            return JSONResponse({'detail':'Origin rejected. Open the configured frontend address or check PUBLIC_ORIGIN.'},status_code=403)
+        if request.headers.get('x-requested-with') != 'Belancer':
+            return JSONResponse({'detail':'CSRF header required'},status_code=403)
     return await call_next(request)
 class Credentials(BaseModel):
     username: str = Field(min_length=3, max_length=24, pattern=r'^[a-zA-Z0-9_]+$')

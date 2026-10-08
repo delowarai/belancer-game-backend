@@ -16,6 +16,8 @@ API health: http://localhost:8000/api/health
 API documentation: http://localhost:8000/docs
 Frontend: http://localhost:5173
 
+With the default local PUBLIC_ORIGIN, both `http://localhost:5173` and `http://127.0.0.1:5173` are accepted. A configured production origin remains exact and does not automatically allow either local address. Keep using one hostname during a session because browser cookies are hostname-specific.
+
 SQLite is the default local database. Run migrations before starting the API. PostgreSQL is required for realistic concurrent competition testing.
 
 To use environment settings, copy `.env.example` to `.env` and launch with:

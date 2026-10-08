@@ -43,6 +43,24 @@ def test_accounts_and_csrf(client):
     assert client.get('/api/auth/me').status_code==401
     assert client.post('/api/auth/login',json={'username':'player1','password':'wrongpassword'}).status_code==401
 
+@pytest.mark.parametrize('origin',['http://localhost:5173','http://127.0.0.1:5173'])
+def test_signup_from_both_local_addresses(client,origin,monkeypatch):
+    monkeypatch.setenv('PUBLIC_ORIGIN','http://localhost:5173')
+    r=client.post('/api/auth/register',json={'username':'localplayer','password':'longpassword'},headers={'origin':origin})
+    assert r.status_code==200
+    assert client.get('/api/auth/me').json()['username']=='localplayer'
+
+def test_production_origin_does_not_allow_localhost(client,monkeypatch):
+    monkeypatch.setenv('PUBLIC_ORIGIN','https://game.example.com')
+    for origin in ['http://localhost:5173','http://127.0.0.1:5173','https://evil.example']:
+        r=client.post('/api/auth/register',json={'username':'localplayer','password':'longpassword'},headers={'origin':origin})
+        assert r.status_code==403 and 'Origin rejected' in r.json()['detail']
+
+def test_csrf_header_error_is_json(client):
+    client.headers.pop('X-Requested-With')
+    r=client.post('/api/auth/logout',json={})
+    assert r.status_code==403 and r.json()['detail']=='CSRF header required'
+
 def test_idempotency_order_and_limit(client):
     account(client);s=start(client,'math-sprint');a=sum(s['prompt']['question'])
     first=act(client,s,a);assert first.status_code==200
