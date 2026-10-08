@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, Column, String, Text, Integer, select, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Session
+from sqlalchemy.exc import IntegrityError
 
 DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///./belancer.db')
 engine = create_engine(DATABASE_URL, connect_args={'check_same_thread': False} if DATABASE_URL.startswith('sqlite') else {})
@@ -24,6 +25,11 @@ class Login(Base):
     token = Column(String, primary_key=True)
     user_id = Column(String, nullable=False)
     expires = Column(Integer, nullable=False)
+class Challenge(Base):
+    __tablename__ = 'challenges'
+    id = Column(String, primary_key=True)
+    game = Column(String, nullable=False)
+    payload = Column(Text, nullable=False)
 class GameSession(Base):
     __tablename__ = 'game_sessions'
     id = Column(String, primary_key=True)
@@ -40,11 +46,11 @@ GAMES = [
     {'slug':'pair-finder','name':'Pair Finder','category':'Memory','description':'Reveal cards and find all matching pairs.'},
     {'slug':'quick-match','name':'Quick Match','category':'Speed','description':'Decide whether two symbols match.'},
     {'slug':'focus-finder','name':'Focus Finder','category':'Attention','description':'Find the different symbol among distractors.'},
-    {'slug':'math-sprint','name':'Math Sprint','category':'Math','description':'Solve ten arithmetic questions accurately.'},
+    {'slug':'math-sprint','name':'Math Sprint','category':'Math','description':'Solve arithmetic accurately within 60 seconds.'},
 ]
 app = FastAPI(title='Belancer Game API', version='1.0.0')
 def now(): return int(datetime.now(timezone.utc).timestamp())
-def challenge(game): return datetime.now(timezone.utc).strftime('%Y-%m-%d') + ':' + game + ':v1'
+def challenge(game): return datetime.now(timezone.utc).strftime('%Y-%m-%d') + ':' + game + ':v2'
 def password_hash(password, salt=None):
     salt = salt or secrets.token_hex(16)
     return salt + ':' + hashlib.scrypt(password.encode(), salt=salt.encode(), n=16384, r=8, p=1).hex()
@@ -104,7 +110,16 @@ def me(request: Request):
 @app.get('/api/games')
 def games(): return GAMES
 @app.get('/api/challenges')
-def challenges(): return [{**g,'id':challenge(g['slug']),'attemptLimit':3,'version':'v1','timezone':'UTC'} for g in GAMES]
+def challenges(request: Request):
+    with Session(engine) as db:
+        try: user=current(request,db)
+        except HTTPException: user=None
+        rows=[]
+        for game in GAMES:
+            cid=challenge(game['slug'])
+            used=len(db.scalars(select(GameSession.id).where(GameSession.user_id==user.id,GameSession.challenge==cid)).all()) if user else None
+            rows.append({**game,'id':cid,'attemptLimit':3,'attemptsRemaining':3-used if used is not None else None,'version':'v2','timezone':'UTC'})
+        return rows
 def generate(game):
     rand=secrets.SystemRandom()
     if game=='memory-grid': return {'rounds':[rand.sample(range(16),3) for _ in range(10)]}
@@ -124,10 +139,15 @@ def start(body: Start,request: Request):
         db.execute(select(User).where(User.id==user.id).with_for_update()).scalar_one()
         count=len(db.scalars(select(GameSession).where(GameSession.user_id==user.id,GameSession.challenge==cid)).all())
         if count>=3: raise HTTPException(409,'All three attempts have been used today')
-        payload=generate(body.game)
+        from app.ranked import create_state, public_state
+        payload=create_state(db, body.game, cid)
         item=GameSession(id=secrets.token_hex(16),user_id=user.id,game=body.game,challenge=cid,attempt=count+1,issued=now(),payload=json.dumps(payload))
-        db.add(item); db.commit()
-        return {'id':item.id,'game':item.game,'challenge':cid,'attempt':item.attempt,'version':'v1','payload':payload,'expiresIn':600}
+        db.add(item)
+        try: db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(409,'Another start was processed; reload attempts before retrying')
+        return public_state(item,payload)
 class Submission(BaseModel):
     answers: list = Field(max_length=100)
     duration: int = Field(ge=1,le=600000)
@@ -161,6 +181,7 @@ def submit(sid: str,body: Submission,request: Request):
         user=current(request,db)
         item=db.scalar(select(GameSession).where(GameSession.id==sid).with_for_update())
         if not item or item.user_id!=user.id: raise HTTPException(404,'Session not found')
+        if json.loads(item.payload).get('version') == 'v2': raise HTTPException(409,'Use ranked action and finish endpoints')
         if item.result: return json.loads(item.result)
         elapsed=now()-item.issued
         if elapsed>600: raise HTTPException(410,'Session expired')
@@ -181,7 +202,7 @@ def leaderboard(game: str):
         best={}
         def key(r):
             if game=='pair-finder': return (-int(r['completed']),r['duration'] if r['completed'] else -r['correct'],r['correct']+r['errors'],r['submitted'])
-            if game=='memory-grid': return (-r['correct'],r['errors'],r['duration'],r['submitted'])
+            if game=='memory-grid': return (-r.get('correctRounds',r['correct']),r['errors'],r['duration'],r['submitted'])
             return (-r['score'],-r['accuracy'],r['submitted'])
         for item,name in rows:
             r={**json.loads(item.result),'username':name}
@@ -193,3 +214,6 @@ def admin(request: Request):
         if current(request,db).role!='admin': raise HTTPException(403,'Admin role required')
         users=db.scalars(select(User)).all(); sessions=db.scalars(select(GameSession)).all()
         return {'players':len(users),'sessions':len(sessions),'validated':sum(bool(s.result) for s in sessions)}
+
+from app.ranked import router as ranked_router
+app.include_router(ranked_router)
