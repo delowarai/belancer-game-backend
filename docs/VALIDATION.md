@@ -1,3 +1,12 @@
+# Step 3 validation
+
+- Fifty backend tests passed, covering admin authorization, suspension/session revocation, role protections, configuration validation and frozen challenge rules, draft/publish/close transitions, result moderation/ranking, CMS and audit history. One upstream AnyIO deprecation warning remains.
+- Frontend TypeScript/Vite production build and six game-engine tests passed.
+- Fresh SQLite migration to 0003 passed. Existing revision 0002 upgraded with its user, challenge and validated result preserved.
+- Operator CLI promotion of a synthetic local test account passed and wrote an audit record.
+- Browser checks in a separate local test database passed: game configuration saved, daily challenge drafted and published, player instructions reflected its frozen configuration, result flagged, and audit records displayed. Results-to-Audit navigation and repeated selected-tab clicks worked after a rendering fix.
+- PostgreSQL concurrency/load, public deployment and a complete mobile walkthrough remain unverified. See STEP_3.md for operational limitations.
+
 # Step 2 validation
 
 - Frontend TypeScript/Vite production build passed.

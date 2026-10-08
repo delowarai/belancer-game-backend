@@ -14,37 +14,48 @@ router = APIRouter()
 LIMITS = {'memory-grid':180000,'pair-finder':180000,'quick-match':60000,'focus-finder':120000,'math-sprint':60000}
 def milliseconds(): return int(time.time()*1000)
 
-def content(game):
+def content(game,configuration=None):
+    from app.admin import DEFAULTS
+    configuration=configuration or DEFAULTS[game]
+    rounds_count=configuration.get('rounds',0)
     random=secrets.SystemRandom()
     if game=='pair-finder':
         cards=list(range(8))*2; random.shuffle(cards); return {'cards':cards}
-    if game=='memory-grid': return {'rounds':[random.sample(range(16),3) for _ in range(10)]}
-    if game=='focus-finder': return {'rounds':[random.randrange(16) for _ in range(10)]}
-    if game=='math-sprint': return {'rounds':[[random.randrange(1,20),random.randrange(1,20)] for _ in range(120)]}
+    if game=='memory-grid': return {'rounds':[random.sample(range(16),configuration['cells']) for _ in range(rounds_count)]}
+    if game=='focus-finder': return {'rounds':[random.randrange(16) for _ in range(rounds_count)]}
+    if game=='math-sprint': return {'rounds':[[random.randrange(1,20),random.randrange(1,20)] for _ in range(rounds_count)]}
     # Exactly half the questions match; order/content are shared by every player.
     rounds=[]
-    for i in range(120):
+    for i in range(rounds_count):
         a=random.randrange(4)
         b=a if i%2==0 else (a+random.randrange(1,4))%4
         rounds.append([a,b])
     random.shuffle(rounds)
     return {'rounds':rounds}
 
+def configured_content(db,game):
+    from app.admin import config,catalog
+    configuration=config(db,game)
+    instructions=next(x['instructions'] for x in catalog(db) if x['slug']==game)
+    return {**content(game,configuration),'_config':configuration,'_instructions':instructions}
+
 def create_state(db,game,cid):
     from app.main import Challenge
-    shared=db.get(Challenge,cid)
+    shared=db.scalar(select(Challenge).where(Challenge.id==cid).with_for_update())
     if shared is None:
         # A savepoint recovers a concurrent unique-key collision without losing
         # the player's transaction/attempt-allocation lock.
         try:
             with db.begin_nested():
-                shared=Challenge(id=cid,game=game,payload=json.dumps(content(game)))
+                shared=Challenge(id=cid,game=game,payload=json.dumps(configured_content(db,game)),status='published')
                 db.add(shared); db.flush()
         except IntegrityError:
-            shared=db.get(Challenge,cid)
+            shared=db.scalar(select(Challenge).where(Challenge.id==cid).with_for_update())
+    if shared.status!='published':raise HTTPException(409,'This challenge is '+shared.status)
     timestamp=milliseconds()
-    return {'version':'v2','content':json.loads(shared.payload),'started':timestamp,
-            'deadline':timestamp+LIMITS[game],'roundIssued':timestamp,'round':0,
+    puzzle=json.loads(shared.payload)
+    return {'version':'v2','content':puzzle,'started':timestamp,
+            'deadline':timestamp+puzzle.get('_config',{}).get('durationSeconds',LIMITS[game]//1000)*1000,'roundIssued':timestamp,'round':0,
             'correct':0,'errors':0,'correctRounds':0,'responseTime':0,
             'found':[],'open':[],'availableAt':timestamp,'events':[]}
 
@@ -57,7 +68,7 @@ def public_state(item,state,timestamp=None):
         elif state['round']<len(state['content']['rounds']):
             question=state['content']['rounds'][state['round']]
             show_until=state['roundIssued']+2000 if item.game=='memory-grid' else None
-            prompt={'question':[] if show_until and timestamp>=show_until else question,'showUntil':show_until}
+            prompt={'question':[] if show_until and timestamp>=show_until else question,'showUntil':show_until,'cells':len(question) if item.game=='memory-grid' else None}
     return {'id':item.id,'game':item.game,'challenge':item.challenge,'attempt':item.attempt,
             'version':'v2','serverNow':timestamp,'deadline':state['deadline'],
             'round':state['round'],'totalRounds':len(state['content'].get('rounds',[])),
@@ -143,9 +154,10 @@ def action(sid:str,body:Action,request:Request):
             expected=state['content']['rounds'][state['round']]
             if item.game=='memory-grid':
                 if timestamp<state['roundIssued']+2000: raise HTTPException(409,'Pattern is still visible')
-                if not isinstance(answer,list) or len(answer)!=3 or any(type(x)!=int or not 0<=x<16 for x in answer) or len(set(answer))!=3: raise HTTPException(422,'Select three unique cells')
-                correct=len(set(expected)&set(answer)); errors=3-correct
-                state['correctRounds']+=int(correct==3)
+                cells=len(expected)
+                if not isinstance(answer,list) or len(answer)!=cells or any(type(x)!=int or not 0<=x<16 for x in answer) or len(set(answer))!=cells: raise HTTPException(422,f'Select {cells} unique cells')
+                correct=len(set(expected)&set(answer)); errors=cells-correct
+                state['correctRounds']+=int(correct==cells)
                 state['responseTime']+=timestamp-state['roundIssued']-2000
             else:
                 if type(answer)!=int: raise HTTPException(422,'Invalid answer')

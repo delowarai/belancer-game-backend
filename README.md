@@ -41,4 +41,10 @@ python -m pytest tests -q
 
 The psycopg binary pin has been updated from 3.2.6 to 3.2.10, which publishes Windows CPython 3.14 wheels. The rest of this project's pinned dependency set is tested on Python 3.12; use that interpreter if another package fails on a newer Python version.
 
-Do not commit `.env`, passwords, databases or virtual environments. See `docs/STEP_2.md` for version 2 rules and API changes. Competition-integrity hardening and full admin management remain before production.
+## Admin panel
+
+After signing up, run `python -m app.manage promote YOUR_USERNAME` from this repository with your virtual environment active. Refresh the browser and open http://localhost:5173/admin. Replace YOUR_USERNAME with your existing account; no default admin credentials are created.
+
+Read `docs/STEP_3.md` for role management, scheduling, game defaults, result review, content and audit behavior. The upgrade requires migration 0003.
+
+Do not commit `.env`, passwords, databases or virtual environments. See `docs/STEP_2.md` for version 2 rules and API changes. Production hardening, email recovery and advanced progress analytics remain.

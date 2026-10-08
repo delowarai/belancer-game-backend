@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import create_engine, Column, String, Text, Integer, select, UniqueConstraint
+from sqlalchemy import create_engine, Column, String, Text, Integer, Boolean, select, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Session
 from sqlalchemy.exc import IntegrityError
 
@@ -21,6 +21,7 @@ class User(Base):
     username = Column(String, unique=True, nullable=False)
     password = Column(String, nullable=False)
     role = Column(String, default='player')
+    active = Column(Boolean, nullable=False, default=True)
 class Login(Base):
     __tablename__ = 'logins'
     token = Column(String, primary_key=True)
@@ -31,6 +32,27 @@ class Challenge(Base):
     id = Column(String, primary_key=True)
     game = Column(String, nullable=False)
     payload = Column(Text, nullable=False)
+    status = Column(String, nullable=False, default='published')
+class GameSettings(Base):
+    __tablename__ = 'game_settings'
+    slug = Column(String, primary_key=True)
+    name = Column(String, nullable=False)
+    description = Column(Text, nullable=False)
+    instructions = Column(Text, nullable=False, default='')
+    available = Column(Boolean, nullable=False, default=True)
+    configuration = Column(Text, nullable=False, default='{}')
+class AuditLog(Base):
+    __tablename__ = 'audit_logs'
+    id = Column(String, primary_key=True)
+    actor = Column(String, nullable=False)
+    action = Column(String, nullable=False)
+    target = Column(String, nullable=False)
+    details = Column(Text, nullable=False)
+    created = Column(Integer, nullable=False)
+class SiteContent(Base):
+    __tablename__ = 'site_content'
+    key = Column(String, primary_key=True)
+    value = Column(Text, nullable=False)
 class GameSession(Base):
     __tablename__ = 'game_sessions'
     id = Column(String, primary_key=True)
@@ -61,6 +83,7 @@ def current(req, db):
     if not login or login.expires < now(): raise HTTPException(401, 'Please sign in')
     user = db.get(User, login.user_id)
     if not user: raise HTTPException(401, 'Please sign in')
+    if not user.active: raise HTTPException(403, 'Account suspended. Contact the operator.')
     return user
 @app.middleware('http')
 async def same_origin(request: Request, call_next):
@@ -100,6 +123,7 @@ def login(body: Credentials, response: Response):
     with Session(engine) as db:
         user = db.scalar(select(User).where(User.username==body.username.lower()))
         if not user or not hmac.compare_digest(password_hash(body.password,user.password.split(':')[0]),user.password): raise HTTPException(401,'Invalid credentials')
+        if not user.active: raise HTTPException(403,'Account suspended. Contact the operator.')
         return set_login(user,db,response)
 @app.post('/api/auth/logout')
 def logout(request: Request,response: Response):
@@ -114,17 +138,27 @@ def me(request: Request):
         user=current(request,db)
         return {'username':user.username,'role':user.role}
 @app.get('/api/games')
-def games(): return GAMES
+def games():
+    from app.admin import catalog
+    with Session(engine) as db: return catalog(db)
+@app.get('/api/content')
+def public_content():
+    from app.admin import site_content
+    with Session(engine) as db:return site_content(db)
 @app.get('/api/challenges')
 def challenges(request: Request):
     with Session(engine) as db:
         try: user=current(request,db)
         except HTTPException: user=None
         rows=[]
-        for game in GAMES:
+        from app.admin import catalog,config,DEFAULTS
+        for game in catalog(db):
             cid=challenge(game['slug'])
+            published=db.get(Challenge,cid)
             used=len(db.scalars(select(GameSession.id).where(GameSession.user_id==user.id,GameSession.challenge==cid)).all()) if user else None
-            rows.append({**game,'id':cid,'attemptLimit':3,'attemptsRemaining':3-used if used is not None else None,'version':'v2','timezone':'UTC'})
+            configuration=json.loads(published.payload).get('_config',DEFAULTS[game['slug']]) if published else config(db,game['slug'])
+            instructions=json.loads(published.payload).get('_instructions','') if published else game['instructions']
+            rows.append({**game,'instructions':instructions,'id':cid,'status':published.status if published else 'published','configuration':configuration,'attemptLimit':3,'attemptsRemaining':3-used if used is not None else None,'version':'v2','timezone':'UTC'})
         return rows
 def generate(game):
     rand=secrets.SystemRandom()
@@ -141,6 +175,8 @@ def start(body: Start,request: Request):
     if body.game not in [g['slug'] for g in GAMES]: raise HTTPException(404,'Unknown game')
     with Session(engine) as db:
         user=current(request,db); cid=challenge(body.game)
+        settings=db.get(GameSettings,body.game)
+        if settings and not settings.available: raise HTTPException(409,'This game is currently unavailable')
         # Lock the player row on PostgreSQL so concurrent requests cannot bypass limits.
         db.execute(select(User).where(User.id==user.id).with_for_update()).scalar_one()
         count=len(db.scalars(select(GameSession).where(GameSession.user_id==user.id,GameSession.challenge==cid)).all())
@@ -212,14 +248,11 @@ def leaderboard(game: str):
             return (-r['score'],-r['accuracy'],r['submitted'])
         for item,name in rows:
             r={**json.loads(item.result),'username':name}
+            player=db.get(User,item.user_id)
+            if r.get('status')!='validated' or not player.active: continue
             if name not in best or key(r)<key(best[name]): best[name]=r
         return [{**r,'rank':i+1} for i,r in enumerate(sorted(best.values(),key=key))]
-@app.get('/api/admin/overview')
-def admin(request: Request):
-    with Session(engine) as db:
-        if current(request,db).role!='admin': raise HTTPException(403,'Admin role required')
-        users=db.scalars(select(User)).all(); sessions=db.scalars(select(GameSession)).all()
-        return {'players':len(users),'sessions':len(sessions),'validated':sum(bool(s.result) for s in sessions)}
-
 from app.ranked import router as ranked_router
 app.include_router(ranked_router)
+from app.admin import router as admin_router
+app.include_router(admin_router)
