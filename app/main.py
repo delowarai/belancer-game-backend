@@ -256,3 +256,5 @@ from app.ranked import router as ranked_router
 app.include_router(ranked_router)
 from app.admin import router as admin_router
 app.include_router(admin_router)
+from app.account import router as account_router
+app.include_router(account_router)

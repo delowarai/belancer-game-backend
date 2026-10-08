@@ -48,3 +48,5 @@ After signing up, run `python -m app.manage promote YOUR_USERNAME` from this rep
 Read `docs/STEP_3.md` for role management, scheduling, game defaults, result review, content and audit behavior. The upgrade requires migration 0003.
 
 Do not commit `.env`, passwords, databases or virtual environments. See `docs/STEP_2.md` for version 2 rules and API changes. Production hardening, email recovery and advanced progress analytics remain.
+
+Step 4 adds account settings and personal ranked progress. See [docs/STEP_4.md](docs/STEP_4.md) for usage and validation. No new migration is required beyond 0003.
