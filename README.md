@@ -50,3 +50,5 @@ Read `docs/STEP_3.md` for role management, scheduling, game defaults, result rev
 Do not commit `.env`, passwords, databases or virtual environments. See `docs/STEP_2.md` for version 2 rules and API changes. Production hardening, email recovery and advanced progress analytics remain.
 
 Step 4 adds account settings and personal ranked progress. See [docs/STEP_4.md](docs/STEP_4.md) for usage and validation. No new migration is required beyond 0003.
+
+Step 5 adds daily, weekly and all-time standings separated by frozen challenge configuration. See [docs/STEP_5.md](docs/STEP_5.md) for rules, validation and limits.

@@ -258,3 +258,5 @@ from app.admin import router as admin_router
 app.include_router(admin_router)
 from app.account import router as account_router
 app.include_router(account_router)
+from app.standings import router as standings_router
+app.include_router(standings_router)
