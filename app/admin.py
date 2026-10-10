@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select,func,delete
 from sqlalchemy.orm import Session
 
-router=APIRouter(prefix='/api/admin',tags=['Administration'])
+router=APIRouter(prefix='/api/admin',tags=['Admin'])
 DEFAULTS={'memory-grid':{'durationSeconds':180,'rounds':10,'cells':3},'pair-finder':{'durationSeconds':180},'quick-match':{'durationSeconds':60,'rounds':120},'focus-finder':{'durationSeconds':120,'rounds':10},'math-sprint':{'durationSeconds':60,'rounds':120}}
 def authorize(request,db):
     from app.main import current
