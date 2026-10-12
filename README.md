@@ -14,9 +14,9 @@ python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 API health: http://localhost:8000/api/health
 API documentation: http://localhost:8000/docs
-Frontend: http://localhost:5173
+Frontend: http://localhost:5176
 
-With the default local PUBLIC_ORIGIN, both `http://localhost:5173` and `http://127.0.0.1:5173` are accepted. A configured production origin remains exact and does not automatically allow either local address. Keep using one hostname during a session because browser cookies are hostname-specific.
+With the default local PUBLIC_ORIGIN, both `http://localhost:5176` and `http://127.0.0.1:5176` are accepted. A configured production origin remains exact and does not automatically allow either local address. Keep using one hostname during a session because browser cookies are hostname-specific.
 
 SQLite is the default local database. Run migrations before starting the API. PostgreSQL is required for realistic concurrent competition testing.
 
@@ -43,7 +43,7 @@ The psycopg binary pin has been updated from 3.2.6 to 3.2.10, which publishes Wi
 
 ## Admin panel
 
-After signing up, run `python -m app.manage promote YOUR_USERNAME` from this repository with your virtual environment active. Refresh the browser and open http://localhost:5173/admin. Replace YOUR_USERNAME with your existing account; no default admin credentials are created.
+After signing up, run `python -m app.manage promote YOUR_USERNAME` from this repository with your virtual environment active. Refresh the browser and open http://localhost:5176/admin. Replace YOUR_USERNAME with your existing account; no default admin credentials are created.
 
 Read `docs/STEP_3.md` for role management, scheduling, game defaults, result review, content and audit behavior. The upgrade requires migration 0003.
 

@@ -84,9 +84,9 @@ def current(req, db):
 async def same_origin(request: Request, call_next):
     if request.method in ('POST','PUT','DELETE','PATCH') and request.url.path not in {'/api/billing/sslcommerz/ipn', '/api/billing/sslcommerz/return','/api/billing/stripe/webhook'}:
         origin = request.headers.get('origin')
-        expected = os.getenv('PUBLIC_ORIGIN', 'http://localhost:5173')
+        expected = os.getenv('PUBLIC_ORIGIN', 'http://localhost:5176')
         allowed = {expected}
-        local_origins = {'http://localhost:5173', 'http://127.0.0.1:5173'}
+        local_origins = {'http://localhost:5176', 'http://127.0.0.1:5176'}
         if expected in local_origins: allowed.update(local_origins)
         if origin and origin not in allowed:
             return JSONResponse({'detail':'Origin rejected. Open the configured frontend address or check PUBLIC_ORIGIN.'},status_code=403)
