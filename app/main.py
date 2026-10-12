@@ -64,13 +64,8 @@ class GameSession(Base):
     payload = Column(Text, nullable=False)
     result = Column(Text)
     __table_args__ = (UniqueConstraint('user_id', 'challenge', 'attempt'),)
-GAMES = [
-    {'slug':'memory-grid','name':'Memory Grid','category':'Memory','description':'Remember the highlighted cells, then select them.'},
-    {'slug':'pair-finder','name':'Pair Finder','category':'Memory','description':'Reveal cards and find all matching pairs.'},
-    {'slug':'quick-match','name':'Quick Match','category':'Speed','description':'Decide whether two symbols match.'},
-    {'slug':'focus-finder','name':'Focus Finder','category':'Attention','description':'Find the different symbol among distractors.'},
-    {'slug':'math-sprint','name':'Math Sprint','category':'Math','description':'Solve arithmetic accurately within 60 seconds.'},
-]
+from app.catalog_data import GAMES
+
 app = FastAPI(title='Belancer Game API', version='1.0.0')
 def now(): return int(datetime.now(timezone.utc).timestamp())
 def challenge(game): return datetime.now(timezone.utc).strftime('%Y-%m-%d') + ':' + game + ':v2'
@@ -87,7 +82,7 @@ def current(req, db):
     return user
 @app.middleware('http')
 async def same_origin(request: Request, call_next):
-    if request.method in ('POST','PUT','DELETE','PATCH'):
+    if request.method in ('POST','PUT','DELETE','PATCH') and request.url.path not in {'/api/billing/sslcommerz/ipn', '/api/billing/sslcommerz/return','/api/billing/stripe/webhook'}:
         origin = request.headers.get('origin')
         expected = os.getenv('PUBLIC_ORIGIN', 'http://localhost:5173')
         allowed = {expected}
@@ -153,6 +148,7 @@ def challenges(request: Request):
         rows=[]
         from app.admin import catalog,config,DEFAULTS
         for game in catalog(db):
+            if game['slug'] not in DEFAULTS:continue
             cid=challenge(game['slug'])
             published=db.get(Challenge,cid)
             used=len(db.scalars(select(GameSession.id).where(GameSession.user_id==user.id,GameSession.challenge==cid)).all()) if user else None
@@ -175,6 +171,8 @@ def start(body: Start,request: Request):
     if body.game not in [g['slug'] for g in GAMES]: raise HTTPException(404,'Unknown game')
     with Session(engine) as db:
         user=current(request,db); cid=challenge(body.game)
+        from app.product import require_access
+        require_access(db,user,body.game)
         settings=db.get(GameSettings,body.game)
         if settings and not settings.available: raise HTTPException(409,'This game is currently unavailable')
         # Lock the player row on PostgreSQL so concurrent requests cannot bypass limits.
@@ -260,3 +258,9 @@ from app.account import router as account_router
 app.include_router(account_router)
 from app.standings import router as standings_router
 app.include_router(standings_router)
+
+from app.product import router as product_router
+app.include_router(product_router)
+
+from app.billing import router as billing_router
+app.include_router(billing_router)
