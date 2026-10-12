@@ -20,18 +20,19 @@ def audit(db,actor,action,target,details):
     db.add(AuditLog(id=secrets.token_hex(16),actor=actor,action=action,target=target,details=json.dumps(details),created=now()))
 def catalog(db):
     from app.main import GAMES,GameSettings
+    from app.product import policy
     settings={x.slug:x for x in db.scalars(select(GameSettings)).all()}
-    return [{**g,**({'name':settings[g['slug']].name,'description':settings[g['slug']].description,'instructions':settings[g['slug']].instructions,'available':settings[g['slug']].available} if g['slug'] in settings else {'instructions':'','available':True})} for g in GAMES]
+    return [{**g,**policy(db,g['slug']),**({'name':settings[g['slug']].name,'description':settings[g['slug']].description,'instructions':settings[g['slug']].instructions,'available':settings[g['slug']].available} if g['slug'] in settings else {'instructions':'','available':True})} for g in GAMES]
 def config(db,game):
     from app.main import GameSettings
     settings=db.get(GameSettings,game)
-    return {**DEFAULTS[game],**(json.loads(settings.configuration) if settings else {})}
+    return {**DEFAULTS.get(game,{}),**(json.loads(settings.configuration) if settings else {})}
 
-DEFAULT_CONTENT={'headline':'A little sharper.\nA little every day.','description':'Give your curiosity a place to play. Five quick games to challenge your memory, focus, and thinking.','contact':'Contact details must be supplied by the deployment operator before public release.','faq':[{'question':'Can I play for free?','answer':'Yes. Practice is unlimited. Create an account for daily ranked challenges.'},{'question':'What do scores mean?','answer':'Scores measure your performance in a particular game. They are not IQ scores or medical assessments.'},{'question':'How do challenges work?','answer':'Each game has a UTC daily challenge with three attempts. Your best validated result appears in its leaderboard.'}]}
+DEFAULT_CONTENT={'privacy':'Privacy policy is awaiting publication by the operator.','terms':'Terms of service are awaiting publication by the operator.','headline':'A little sharper.\nA little every day.','description':'Give your curiosity a place to play. Free games to challenge your memory, focus, and thinking.','contact':'Contact details must be supplied by the deployment operator before public release.','faq':[{'question':'Can I play for free?','answer':'Yes. Practice is unlimited. Create an account for daily ranked challenges.'},{'question':'What do scores mean?','answer':'Scores measure your performance in a particular game. They are not IQ scores or medical assessments.'},{'question':'How do challenges work?','answer':'Each game has a UTC daily challenge with three attempts. Your best validated result appears in its leaderboard.'}]}
 def site_content(db):
     from app.main import SiteContent
     value=db.get(SiteContent,'public')
-    return json.loads(value.value) if value else DEFAULT_CONTENT
+    return {**DEFAULT_CONTENT,**(json.loads(value.value) if value else {})}
 
 class FAQ(BaseModel):
     model_config=ConfigDict(extra='forbid',str_strip_whitespace=True)
@@ -42,6 +43,8 @@ class ContentChange(BaseModel):
     headline:str=Field(min_length=1,max_length=120)
     description:str=Field(min_length=1,max_length=500)
     contact:str=Field(min_length=1,max_length=1000)
+    privacy:str=Field(default=DEFAULT_CONTENT['privacy'],min_length=10,max_length=15000)
+    terms:str=Field(default=DEFAULT_CONTENT['terms'],min_length=10,max_length=15000)
     faq:list[FAQ]=Field(min_length=1,max_length=20)
     reason:str=Field(min_length=3,max_length=500)
 @router.get('/content')
@@ -59,14 +62,15 @@ def update_content(body:ContentChange,request:Request):
         audit(db,actor.username,'content.update','public',{'before':before,'after':value,'reason':body.reason});db.commit()
         return value
 def validate_config(game,value):
-    allowed=set(DEFAULTS[game])
+    allowed=set(DEFAULTS.get(game,{}))
     if set(value)!=allowed:raise HTTPException(422,'Unsupported configuration keys')
     if any(type(x)!=int for x in value.values()):raise HTTPException(422,'Configuration values must be integers')
-    if not 10<=value['durationSeconds']<=600:raise HTTPException(422,'Duration must be 10–600 seconds')
+    if not allowed:return
+    if not 10<=value['durationSeconds']<=600:raise HTTPException(422,'Duration must be 10â€“600 seconds')
     if 'rounds' in value:
         maximum=10 if game=='memory-grid' else 50 if game=='focus-finder' else 120
-        if not 1<=value['rounds']<=maximum:raise HTTPException(422,f'Rounds must be 1–{maximum}')
-    if 'cells' in value and not 3<=value['cells']<=8:raise HTTPException(422,'Memory cells must be 3–8')
+        if not 1<=value['rounds']<=maximum:raise HTTPException(422,f'Rounds must be 1â€“{maximum}')
+    if 'cells' in value and not 3<=value['cells']<=8:raise HTTPException(422,'Memory cells must be 3â€“8')
     if game=='memory-grid' and value['durationSeconds']*1000<value['rounds']*2100:raise HTTPException(422,'Allow at least 2.1 seconds per memory round')
 
 class Mutation(BaseModel):
@@ -127,7 +131,8 @@ def get_games(request:Request):
 @router.post('/games/{game}')
 def update_game(game:str,body:GameChange,request:Request):
     from app.main import engine,GameSettings
-    if game not in DEFAULTS:raise HTTPException(404,'Game not found')
+    from app.main import GAMES
+    if game not in {g['slug'] for g in GAMES}:raise HTTPException(404,'Game not found')
     validate_config(game,body.configuration)
     with Session(engine) as db:
         actor=authorize(request,db);before=next(g for g in catalog(db) if g['slug']==game);before['configuration']=config(db,game)
