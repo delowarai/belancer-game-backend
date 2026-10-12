@@ -11,7 +11,7 @@ from test_admin import admin
 
 def test_catalog_free_and_ranked_separate(client):
     games=client.get('/api/games').json()
-    assert len(games)==34 and all(g['access']=='free' for g in games)
+    assert len(games)==35 and all(g['access']=='free' for g in games)
     assert client.get('/api/games/nuts-bolts/access').json()['allowed']
     assert len(client.get('/api/challenges').json())==5
 
@@ -118,3 +118,11 @@ def test_ssl_ipn_requires_server_validation(client,monkeypatch):
     assert client.post('/api/billing/sslcommerz/ipn',content='val_id=validation1').status_code==200
     with Session(m.engine) as db:assert db.get(b.Order,'order1').status=='paid'
 
+
+def test_brain_quest_free_access_and_account_save(client):
+    access=client.get('/api/games/brain-quest/access')
+    assert access.status_code==200 and access.json()['allowed']
+    account(client)
+    data={'revision':0,'data':{'belancer-brain-quest-v1':'{"unlocked":2,"wins":[1]}'}}
+    assert client.post('/api/practice/saves/brain-quest',json=data).status_code==200
+    assert client.get('/api/practice/saves/brain-quest').json()['data']==data['data']
