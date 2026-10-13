@@ -5,3 +5,5 @@ GAMES=json.loads('[{"slug": "memory-grid", "name": "Memory Grid", "category": "M
 GAMES.append({"slug":"bottle-garden","name":"Belancer Bottle Garden","category":"Problem Solving","icon":"◒","description":"Pour, match and unwind. Sort colorful bottles through 24 garden puzzles.","practiceOnly":True})
 
 GAMES.append({"slug":"brain-quest","name":"Belancer Brain Quest","category":"Problem Solving","icon":"?","description":"Think beyond the obvious. Explore 12 notebook puzzles with taps, drags and helpful hints.","practiceOnly":True})
+
+GAMES.append({"slug":"metro-run","name":"Belancer Metro Run","category":"Speed","icon":"➜","description":"Race the sunset tracks. Dodge trains, jump barriers and collect coins in a three-lane 3D runner.","practiceOnly":True})

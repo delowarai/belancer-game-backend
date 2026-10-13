@@ -37,7 +37,7 @@ class PracticeHistory(Base):
     created = Column(Integer, nullable=False)
     __table_args__ = (UniqueConstraint('user_id', 'run_id'),)
 
-SAVE_KEYS={'brain-quest':['belancer-brain-quest-v1'],'bottle-garden':['belancer-bottle-garden-v1'],'bird-launch':['belancer-bird-progress-v1'],'nuts-bolts':['belancer-bolts-v1','belancer-bolts-spent-v1'],
+SAVE_KEYS={'metro-run':['belancer-metro-run-v1'],'brain-quest':['belancer-brain-quest-v1'],'bottle-garden':['belancer-bottle-garden-v1'],'bird-launch':['belancer-bird-progress-v1'],'nuts-bolts':['belancer-bolts-v1','belancer-bolts-spent-v1'],
            'highway-rush':['belancer-racing-v1'],'snake-arena':['belancer-snake-v1']}
 class PracticeSave(Base):
     __tablename__='practice_saves'

@@ -11,7 +11,7 @@ from test_admin import admin
 
 def test_catalog_free_and_ranked_separate(client):
     games=client.get('/api/games').json()
-    assert len(games)==35 and all(g['access']=='free' for g in games)
+    assert len(games)==36 and all(g['access']=='free' for g in games)
     assert client.get('/api/games/nuts-bolts/access').json()['allowed']
     assert len(client.get('/api/challenges').json())==5
 
