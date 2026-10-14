@@ -1,54 +1,191 @@
-# Belancer Game backend
+# Belancer Game · Backend
 
-Use Python 3.12 for the tested setup. In PyCharm create/select a Python 3.12 virtual environment for this repository. The root `main.py` is the IDE sample; the API entry point is `app.main:app`.
+**A FastAPI game-platform API with server-authoritative ranked scoring, account management, audited administration and premium-access infrastructure.**
 
-With the virtual environment activated, run from the repository root:
+[Frontend repository](https://github.com/delowarai/belancer-game-frontend) · [Playable portfolio demo](https://belancer-game.netlify.app) · [Ranked rules](docs/STEP_2.md) · [Leaderboard design](docs/STEP_5.md)
+
+> The public Netlify site runs free browser-only practice games. This repository powers the separate backend-connected application; accounts, rankings, admin services and payments are not active on that public demo.
+
+## Project overview
+
+Belancer Game combines a 36-game frontend with a backend that manages the parts requiring shared state and trusted decisions. Five games support ranked challenges: **Memory Grid, Pair Finder, Quick Match, Focus Finder and Math Sprint**. Other games provide local practice experiences, with account saves available for supported campaigns in the full application.
+
+The backend does more than store a score submitted by a browser. It issues ranked sessions, validates gameplay actions against server rules, computes results and maintains game-specific standings. Administrative changes and payment access also pass through server-side authorization.
+
+| Area | Implementation |
+| --- | --- |
+| API framework | FastAPI, Pydantic and Uvicorn |
+| Persistence | SQLAlchemy with Alembic migrations |
+| Databases | SQLite for local development; PostgreSQL support through psycopg |
+| Authentication | Password hashing, session cookies and account lifecycle controls |
+| Competition | Versioned ranked sessions, frozen challenge settings and per-game standings |
+| Administration | Role-protected management, moderation and audit records |
+| Product features | Catalog policies, supported campaign saves and entitlements |
+| Payments | Stripe and SSLCommerz integration with verified notifications |
+| Validation | pytest and HTTPX/TestClient regression tests |
+
+## What I implemented
+
+- Registration, login/logout, current-account lookup, username/password updates and sign-out across sessions.
+- Daily challenges with server-controlled deadlines, attempt limits and versioned rule configuration.
+- Action validation and authoritative score calculation for the five ranked games.
+- Daily, weekly and all-time standings separated by game and frozen configuration profile.
+- Personal progress, ranked activity and account-isolated practice saves for supported campaigns.
+- Administrative game settings, user roles, suspension, challenge scheduling, result review and public-content editing.
+- Audited access policies, premium entitlements and payment-provider integration.
+- Database migrations and regression tests for authorization, gameplay, rankings and product flows.
+
+## How ranked play works
+
+```text
+Player requests a challenge
+          |
+          v
+Server checks account, availability, access and attempt limit
+          |
+          v
+Server issues a session with fixed rules and a deadline
+          |
+          v
+Browser sends ordered gameplay actions
+          |
+          v
+Server validates actions and computes the result
+          |
+          v
+Eligible results enter that game's configuration-specific standings
+```
+
+**The browser is not the scoring authority.** Local practice results and cosmetic coins do not become ranked scores. Ranked settings are versioned, and published challenge configuration remains fixed so later administrative edits do not rewrite an existing competition.
+
+Started and interrupted sessions count toward the daily attempt limit. Competition dates use **UTC**. Moderation can flag or invalidate results while preserving the underlying score and review history.
+
+## API areas
+
+The interactive OpenAPI documentation at `/docs` is the source of truth for request schemas.
+
+| Area | Representative routes | Purpose |
+| --- | --- | --- |
+| Health | `GET /api/health` | Service readiness check |
+| Authentication | `/api/auth/register`, `/login`, `/logout`, `/me` | Account sessions |
+| Catalog | `GET /api/games`, `/api/content`, `/api/challenges` | Games, public content and daily lineup |
+| Ranked sessions | `/api/sessions`, `/{sid}/actions`, `/{sid}/finish` | Start, validate and finish attempts |
+| Standings | `GET /api/standings/{game}` | Period-specific rankings |
+| Account | `/api/account/*`, `/api/progress` | Profile updates and personal progress |
+| Practice | `/api/practice/saves/{game}`, `/api/practice/history` | Account-isolated saves and recorded activity |
+| Administration | `/api/admin/*` | Role-protected platform management |
+| Billing | `/api/billing/*` | Checkout and provider notification handling |
+
+## Local setup
+
+Use **Python 3.12**, the tested interpreter for this dependency set. Run commands from this repository's root.
+
+### 1. Create an environment and install dependencies
 
 ```powershell
-python --version
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
-python -m alembic upgrade head
-python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+Copy-Item .env.example .env
 ```
 
-API health: http://localhost:8000/api/health
-API documentation: http://localhost:8000/docs
-Frontend: http://localhost:5176
+On macOS/Linux, activate with `source .venv/bin/activate` and copy the example using `cp .env.example .env`.
 
-With the default local PUBLIC_ORIGIN, both `http://localhost:5176` and `http://127.0.0.1:5176` are accepted. A configured production origin remains exact and does not automatically allow either local address. Keep using one hostname during a session because browser cookies are hostname-specific.
-
-SQLite is the default local database. Run migrations before starting the API. PostgreSQL is required for realistic concurrent competition testing.
-
-To use environment settings, copy `.env.example` to `.env` and launch with:
+### 2. Apply database migrations
 
 ```powershell
-python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000 --env-file .env
+python -m alembic upgrade head
 ```
 
-Alembic does not load `.env` automatically. Set DATABASE_URL in the terminal when migrating a custom database:
+SQLite is the default local database. Alembic does not automatically load `.env`; set `DATABASE_URL` in the terminal before migrating a custom database:
 
 ```powershell
 $env:DATABASE_URL = 'your_database_connection_string'
 python -m alembic upgrade head
 ```
 
-Tests:
+### 3. Start the API
+
+```powershell
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000 --env-file .env
+```
+
+| Local service | URL |
+| --- | --- |
+| Health check | http://localhost:8000/api/health |
+| Swagger UI | http://localhost:8000/docs |
+| Frontend | http://localhost:5176 |
+
+The API entry point is **`app.main:app`**. The root `main.py` is an IDE sample, not the application server.
+
+Start the frontend separately following its README. Vite proxies `/api` to the backend, keeping browser requests on the frontend origin. The default local configuration accepts `localhost:5176` and `127.0.0.1:5176`; use one hostname consistently because cookies are hostname-specific. A configured production origin remains exact.
+
+## Configuration
+
+| Variable | Purpose |
+| --- | --- |
+| `DATABASE_URL` | Database connection string |
+| `PUBLIC_ORIGIN` | Allowed frontend origin |
+| `COOKIE_SECURE` | Secure-cookie behavior; enable for HTTPS hosting |
+| `PAYMENT_PUBLIC_ORIGIN` | Public HTTPS origin used by payment flows |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | Stripe server credentials |
+| `SSLCOMMERZ_STORE_ID`, `SSLCOMMERZ_STORE_PASSWORD` | SSLCommerz server credentials |
+| `SSLCOMMERZ_SANDBOX` | SSLCommerz test/live mode |
+
+Payment providers remain disabled until credentials and administrative settings are configured. Keep secrets in environment variables. Never commit `.env`, credentials, local databases or virtual environments.
+
+## Administration
+
+There are no default admin credentials. Register an account, then explicitly promote it using the operator command:
+
+```powershell
+python -m app.manage promote YOUR_USERNAME
+```
+
+Replace `YOUR_USERNAME` with an existing active account. Refresh the frontend and open `/admin`.
+
+Administrative mutations require a reason and create an audit record. Role-management safeguards prevent self-suspension/self-demotion and removal of the last active administrator. Suspending an account revokes its sessions and excludes it from rankings.
+
+See [Administration design](docs/STEP_3.md) and [Account/progress features](docs/STEP_4.md).
+
+## Payments and access
+
+The full application includes hosted checkout integration for **Stripe** and **SSLCommerz**, with entitlements managed by the backend. Checkout prices come from server-side policies, not browser input. A success-page redirect does not grant access: verified provider notifications determine payment completion.
+
+These integrations are not live on the portfolio demo. Real merchant setup, credentials, operational refund handling and deployment checks are separate release tasks. Browser-local game coins have no monetary value.
+
+## Tests
 
 ```powershell
 python -m pytest tests -q
 ```
 
-The psycopg binary pin has been updated from 3.2.6 to 3.2.10, which publishes Windows CPython 3.14 wheels. The rest of this project's pinned dependency set is tested on Python 3.12; use that interpreter if another package fails on a newer Python version.
+Tests cover authentication, administrator permissions, ranked actions and deadlines, challenge configuration, moderation, standings, account isolation, premium access and payment-notification verification. The latest local backend validation completed with **85 passing tests**.
 
-## Admin panel
+SQLite tests are useful for regression checks; realistic concurrent competition testing should also use PostgreSQL. Passing the suite does not imply a production security audit or completed live-payment certification.
 
-After signing up, run `python -m app.manage promote YOUR_USERNAME` from this repository with your virtual environment active. Refresh the browser and open http://localhost:5176/admin. Replace YOUR_USERNAME with your existing account; no default admin credentials are created.
+## Repository guide
 
-Read `docs/STEP_3.md` for role management, scheduling, game defaults, result review, content and audit behavior. The upgrade requires migration 0003.
+```text
+app/
+  main.py           FastAPI application, core models and account/session routes
+  ranked.py         Ranked action validation and session lifecycle
+  standings.py      Period and configuration-specific rankings
+  account.py        Account settings and personal progress
+  admin.py          Authorized management and audit workflows
+  product.py        Access policies, entitlements and practice saves
+  billing.py        Checkout and payment verification
+  catalog_data.py   Shared game catalog
+  manage.py         Explicit administrator provisioning command
+tests/              API and domain regression tests
+docs/               Design notes and feature milestones
+alembic.ini         Database migration configuration
+requirements.txt    Pinned Python dependencies
+```
 
-Do not commit `.env`, passwords, databases or virtual environments. See `docs/STEP_2.md` for version 2 rules and API changes. Production hardening, email recovery and advanced progress analytics remain.
+## Current scope
 
-Step 4 adds account settings and personal ranked progress. See [docs/STEP_4.md](docs/STEP_4.md) for usage and validation. No new migration is required beyond 0003.
+This is a portfolio backend with implemented and tested platform flows, not a claim of a finished production service. The public playable demo intentionally runs without it. Production deployment needs persistent storage, HTTPS, correct cookie/origin configuration and operational monitoring. Email recovery, live payment operations and additional production hardening remain future work.
 
-Step 5 adds daily, weekly and all-time standings separated by frozen challenge configuration. See [docs/STEP_5.md](docs/STEP_5.md) for rules, validation and limits.
+Older setup notes are preserved in [Implementation history](docs/IMPLEMENTATION_HISTORY.md).
